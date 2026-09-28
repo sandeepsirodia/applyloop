@@ -1,0 +1,20 @@
+<!doctype html>
+<!-- Shape of a real Ashby application form (jobs.ashbyhq.com/<org>/<id>/application, Sept 2026): system fields
+     with ids, and Yes/No questions rendered as buttons that drive a hidden checkbox. Trimmed; no Ashby code. -->
+<html><head><meta charset="utf-8"><title>ML Engineer - Initech</title></head>
+<body>
+<form id="form" onsubmit="event.preventDefault(); this.hidden = true; document.getElementById('done').hidden = false">
+  <div class="_fieldEntry"><label for="_systemfield_name">Name</label><input id="_systemfield_name" name="_systemfield_name" type="text" required></div>
+  <div class="_fieldEntry"><label for="_systemfield_email">Email</label><input id="_systemfield_email" name="_systemfield_email" type="email" required></div>
+  <div class="_fieldEntry"><label for="_systemfield_resume">Resume</label><input id="_systemfield_resume" type="file"></div>
+  <div class="_fieldEntry yesno">
+    <label class="_label">Are you legally authorized to work in the United States?</label>
+    <input type="checkbox" name="q-auth" style="display:none">
+    <button type="button" onclick="this.parentElement.querySelector('input').checked = true; this.classList.add('picked')">Yes</button>
+    <button type="button" onclick="this.parentElement.querySelector('input').checked = false; this.classList.add('picked')">No</button>
+  </div>
+  <div class="_fieldEntry"><label for="why">Why do you want to work at Initech?</label><textarea id="why" name="why"></textarea></div>
+  <button type="submit">Submit Application</button>
+</form>
+<div id="done" hidden><h2>Thanks for applying!</h2></div>
+</body></html>

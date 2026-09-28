@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>applyloop</title>
+<style>
+:root { --bg:#ffffff; --fg:#1b1f24; --muted:#59636e; --line:#d1d9e0; --card:#f6f8fa; --accent:#0969da; --ok:#1a7f37; --warn:#9a6700; --bad:#cf222e; }
+@media (prefers-color-scheme: dark) { :root { --bg:#0d1117; --fg:#e6edf3; --muted:#9198a1; --line:#3d444d; --card:#151b23; --accent:#4493f8; --ok:#3fb950; --warn:#d29922; --bad:#f85149; } }
+* { box-sizing: border-box; } [hidden] { display: none !important; }
+body { margin:0; font:14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--fg); }
+header { display:flex; flex-wrap:wrap; gap:12px; align-items:center; padding:12px 16px; border-bottom:1px solid var(--line); }
+header h1 { font-size:16px; margin:0 12px 0 0; }
+.pill { display:inline-block; padding:2px 10px; border-radius:99px; border:1px solid var(--line); color:var(--muted); font-size:12px; margin-right:4px; }
+.pill.run { color:var(--ok); border-color:var(--ok); } .pill.bad { color:var(--bad); border-color:var(--bad); }
+button { font:inherit; padding:5px 12px; border-radius:6px; border:1px solid var(--line); background:var(--card); color:var(--fg); cursor:pointer; }
+button.primary { background:var(--accent); border-color:var(--accent); color:#fff; } button.danger { color:var(--bad); }
+button.link { border:none; background:none; padding:0 4px; color:var(--muted); }
+nav { display:flex; gap:4px; padding:8px 16px; border-bottom:1px solid var(--line); overflow-x:auto; }
+nav button { border:none; background:none; color:var(--muted); } nav button.on { color:var(--fg); font-weight:600; box-shadow: inset 0 -2px var(--accent); border-radius:0; }
+main { padding:16px; max-width:1100px; margin:0 auto; }
+.grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(120px, 1fr)); gap:8px; margin-bottom:16px; }
+.stat { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:10px; } .stat b { display:block; font-size:22px; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px; margin-bottom:12px; }
+table { width:100%; border-collapse:collapse; } td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+.muted { color:var(--muted); } .log { font:12px ui-monospace, monospace; max-height:340px; overflow:auto; white-space:pre-wrap; }
+.warn { color:var(--warn); } .error { color:var(--bad); }
+input, select { font:inherit; padding:5px 8px; border-radius:6px; border:1px solid var(--line); background:var(--bg); color:var(--fg); }
+img.shot { max-width:100%; border:1px solid var(--line); border-radius:6px; margin-top:8px; }
+.row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; } section[hidden] { display:none; }
+</style>
+<header>
+  <h1>applyloop</h1>
+  <span id="state" class="pill"></span><span id="mode" class="pill"></span><span id="kill" class="pill bad" hidden>kill switch on</span>
+  <div class="row" style="margin-left:auto">
+    <button class="primary" id="startBtn">Start</button><button id="pauseBtn">Pause</button>
+    <button id="discoverBtn">Find jobs now</button><button class="danger" id="killBtn">Kill switch</button>
+  </div>
+</header>
+<nav id="tabs"></nav>
+<main>
+  <section id="pipeline"><div class="grid" id="counts"></div>
+    <div class="card"><b>Live log</b><div class="log" id="log"></div></div>
+    <div class="card"><b>Recent</b><table id="recent"></table></div></section>
+  <section id="approvals" hidden></section>
+  <section id="questions" hidden></section>
+  <section id="roles" hidden>
+    <div class="card"><b>Roles</b><div id="roleList" style="margin:8px 0"></div>
+      <div class="row"><input id="newRole" placeholder="e.g. backend engineer"><button id="addRoleBtn">Add role</button></div>
+      <div id="adjacent" class="muted" style="margin-top:8px"></div></div>
+    <div class="card"><b>Resumes</b><table id="resumeList"></table>
+      <div class="row" style="margin-top:8px"><input id="resumeLabel" placeholder="label, e.g. backend-v2"><input type="file" id="resumeFile" accept=".pdf,.docx,.md,.txt,.json"><button id="uploadBtn">Add resume</button></div></div>
+  </section>
+  <section id="budgets" hidden><div class="card"><table id="budgetList"></table></div></section>
+  <section id="outcomes" hidden><div class="card" id="outcomeBox"></div></section>
+  <section id="settings" hidden><div class="card" id="settingsBox"></div></section>
+</main>
+<script>
+"use strict";
+// Everything shown here comes from job pages and forms written by other people, so no data ever becomes HTML
+// or code: elements are built with h() (textContent for text, addEventListener for handlers).
+const T = "__TOKEN__";
+const TABS = [["pipeline","Pipeline"],["approvals","Approvals"],["questions","Questions"],["roles","Roles & resumes"],["budgets","Budgets"],["outcomes","Outcomes"],["settings","Settings"]];
+let S = null, tab = "pipeline";
+const $ = id => document.getElementById(id);
+
+function h(tag, attrs, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else if (k === "class") el.className = v;
+    else if (v === true) el.setAttribute(k, "");
+    else if (v !== false && v != null) el.setAttribute(k, v);
+  }
+  for (const kid of kids.flat()) if (kid != null && kid !== false) el.append(kid instanceof Node ? kid : document.createTextNode(String(kid)));
+  return el;
+}
+const fill = (el, ...kids) => { el.replaceChildren(...kids.flat().filter(k => k != null && k !== false)); };
+const safeUrl = u => /^https?:\/\//i.test(u || "") ? u : null;
+
+async function api(path, body) {
+  const r = await fetch(path, {method: body ? "POST" : "GET", headers: {"X-Token": T, "Content-Type": "application/json"}, body: body ? JSON.stringify(body) : undefined});
+  const data = await r.json();
+  if (!r.ok) alert(data.error || r.status);
+  return data;
+}
+const post = (path, body) => api(path, body).then(refresh);
+const control = a => post("/api/control", {action: a});
+const setting = (k, v) => post("/api/settings", {[k]: v});
+
+function showTab(t) { tab = t; for (const [id] of TABS) $(id).hidden = id !== t; renderTabs(); }
+function renderTabs() {
+  const badge = {approvals: S ? S.approvals.length : 0, questions: S ? S.questions.length : 0};
+  fill($("tabs"), TABS.map(([id, name]) => h("button", {class: id === tab ? "on" : "", onclick: () => showTab(id)}, name + (badge[id] ? " (" + badge[id] + ")" : ""))));
+}
+
+function render() {
+  const s = S.settings;
+  $("state").textContent = s.state; $("state").className = "pill" + (s.state === "running" ? " run" : "");
+  $("mode").textContent = s.dry_run ? "dry run: never submits" : (s.auto_approve ? "auto-approve on" : "manual approval");
+  $("kill").hidden = !s.kill_switch; $("killBtn").textContent = s.kill_switch ? "Release kill switch" : "Kill switch";
+
+  const stages = ["ranked","prepared","waiting","approved","submitted","dry-run","needs-check","failed"];
+  fill($("counts"), h("div", {class: "stat"}, h("b", {}, S.submitted_today + "/" + s.daily_cap), "submitted today"),
+       stages.map(k => h("div", {class: "stat"}, h("b", {}, S.counts[k] || 0), k)));
+  fill($("recent"), S.recent.map(j => h("tr", {}, h("td", {}, j.company), h("td", {}, j.title), h("td", {}, j.stage),
+       h("td", {class: "muted"}, j.reason || ""), h("td", {}, j.fit ? j.fit.toFixed(2) : ""))));
+
+  fill($("approvals"), S.approvals.length ? S.approvals.map(j => h("div", {class: "card"},
+      h("div", {class: "row"}, h("b", {}, j.company + " — " + j.title), h("span", {class: "pill"}, "fit " + j.fit.toFixed(2)),
+        h("span", {class: "pill"}, j.resume_variant),
+        h("span", {style: "margin-left:auto"}, h("button", {class: "primary", onclick: () => post("/api/approve", {job_id: j.job_id})}, "Approve"), " ",
+          h("button", {onclick: () => post("/api/reject", {job_id: j.job_id})}, "Reject"))),
+      j.auto.length ? h("div", {class: "muted"}, "Not auto-approved: " + j.auto.join("; ")) : null,
+      h("table", {}, (j.answers || []).map(a => h("tr", {}, h("td", {}, a.question),
+        h("td", {}, a.source === "file" ? "📎 " + String(a.value).split("/").pop() : a.value), h("td", {class: "muted"}, a.source)))),
+      j.screenshot_url ? h("img", {class: "shot", src: j.screenshot_url, alt: "the filled form"}) : null,
+      safeUrl(j.apply_url) ? h("div", {class: "muted"}, h("a", {href: j.apply_url, target: "_blank", rel: "noopener noreferrer"}, "open the posting")) : null))
+    : h("p", {class: "muted"}, "Nothing waiting for approval."));
+
+  fill($("questions"), S.questions.length ? S.questions.map(q => {
+      const input = q.options ? h("select", {}, q.options.map(o => h("option", {}, o))) : h("input", {size: 40});
+      return h("div", {class: "card"}, h("b", {}, q.question), " ", h("span", {class: "muted"}, (q.job && q.job.company) || ""),
+        h("div", {class: "muted"}, q.reason),
+        h("div", {class: "row", style: "margin-top:6px"}, input, h("button", {class: "primary", onclick: () => post("/api/answer", {id: q.id, value: input.value})}, "Save answer")));
+    }) : h("p", {class: "muted"}, "No questions waiting. Each question is asked once; answers are reused on every form."));
+
+  fill($("roleList"), s.roles.length ? s.roles.map(r => h("span", {class: "pill"}, r, h("button", {class: "link", title: "remove", onclick: () => post("/api/roles", {remove: r})}, "×")))
+    : h("span", {class: "muted"}, "No roles yet."));
+  const adj = s.adjacent_suggested || [];
+  fill($("adjacent"), adj.length ? ["Roles you didn't list that fit your skills: ", adj.map(a =>
+      h("button", {onclick: () => setting("adjacent_accepted", s.adjacent_accepted.concat([a.family]))},
+        "+ " + a.family + " (" + Math.round(a.median_cover * 100) + "% skill cover, " + a.open + " open)"))] : []);
+  const resumes = Object.entries(s.resumes);
+  fill($("resumeList"), resumes.length ? resumes.map(([label, r]) => h("tr", {},
+      h("td", {}, h("b", {}, label), label === s.default_resume ? " (default)" : ""),
+      h("td", {}, (r.findings || []).length ? r.findings.map(f => h("div", {class: "warn"}, f.message)) : h("span", {class: "muted"}, "no parsing problems")),
+      h("td", {}, r.reviewed ? "reviewed ✓" : h("button", {onclick: () => post("/api/resume/reviewed", {label})}, "Mark reviewed"))))
+    : h("tr", {}, h("td", {class: "muted"}, "No resume yet.")));
+
+  const b = S.budgets, sites = Object.entries(b.sites);
+  fill($("budgetList"), b.all_paused ? h("tr", {}, h("td", {colspan: 4, class: "error"}, "All sites paused: " + b.all_paused.reason)) : null,
+    sites.length ? sites.map(([site, v]) => h("tr", {}, h("td", {}, site),
+      h("td", {}, Object.entries(v.used).map(([k, n]) => n + "/" + (v.limits[k] ?? "∞") + " " + k.split("_")[1]).join(" · ")),
+      h("td", {class: v.paused ? "warn" : ""}, v.paused ? v.paused.reason : v.breaker ? "breaker " + v.breaker.state : "ok"),
+      h("td", {}, h("button", {onclick: () => post("/api/budget", {site, action: v.paused || v.breaker ? "resume" : "pause"})}, v.paused || v.breaker ? "Resume" : "Pause"))))
+    : h("tr", {}, h("td", {class: "muted"}, "No site visited yet.")));
+
+  const o = S.outcomes;
+  fill($("outcomeBox"), h("p", {}, h("b", {}, o.applications), " applications submitted."),
+    o.report ? h("p", {}, h("a", {href: o.report, target: "_blank"}, "Open the latest ghosted report"), ": when to stop waiting, what's working, what you might lack.") : null,
+    h("p", {class: "muted"}, "Replies are read on your machine by ghosted. Run:"), h("pre", {class: "log"}, o.how));
+
+  const num = (k, step) => h("label", {}, k.replace(/_/g, " ") + " ", h("input", {type: "number", step, value: s[k], onchange: e => setting(k, Number(e.target.value))}));
+  const chk = (k, label) => h("label", {}, h("input", {type: "checkbox", checked: !!s[k], onchange: e => setting(k, e.target.checked)}), " " + label);
+  fill($("settingsBox"),
+    h("div", {class: "row"}, chk("dry_run", "Dry run (fill forms, never submit)"), chk("auto_approve", "Auto-approve good matches"),
+      chk("allow_drafted", "Allow drafted essay answers in auto-approve"), chk("remote", "Remote only")),
+    h("div", {class: "row", style: "margin-top:8px"}, num("fit_threshold", 0.05), num("fit_floor", 0.05), num("daily_cap", 1), num("daily_target", 1), num("cooldown_days", 1)));
+  renderTabs();
+}
+
+function addLog(e) {
+  $("log").append(h("div", {class: e.level}, new Date(e.ts * 1000).toLocaleTimeString() + "  " + e.message));
+  $("log").scrollTop = 1e9;
+}
+async function refresh() { S = await api("/api/state"); render(); }
+async function uploadResume() {
+  const f = $("resumeFile").files[0]; if (!f) return;
+  const bytes = new Uint8Array(await f.arrayBuffer());
+  let bin = ""; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  const res = await api("/api/resume", {label: $("resumeLabel").value || f.name.replace(/\.\w+$/, ""), filename: f.name, data: btoa(bin)});
+  if (res.findings) alert(res.findings.length ? "What a parser loses from this resume:\n\n" + res.findings.map(x => "• " + x.message).join("\n") : "No parsing problems found.");
+  refresh();
+}
+$("startBtn").addEventListener("click", () => control("start"));
+$("pauseBtn").addEventListener("click", () => control("pause"));
+$("discoverBtn").addEventListener("click", () => control("discover"));
+$("killBtn").addEventListener("click", () => control(S.settings.kill_switch ? "unkill" : "kill"));
+$("addRoleBtn").addEventListener("click", () => { const v = $("newRole").value.trim(); if (v) post("/api/roles", {add: v}).then(() => { $("newRole").value = ""; }); });
+$("uploadBtn").addEventListener("click", uploadResume);
+refresh().then(() => { $("log").replaceChildren(); S.events.forEach(addLog); });
+const es = new EventSource("/api/events?t=" + encodeURIComponent(T));
+es.onmessage = m => { addLog(JSON.parse(m.data)); refresh(); };
+setInterval(refresh, 5000);
+renderTabs();
+</script>
+</html>

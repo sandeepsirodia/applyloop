@@ -1,0 +1,17 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # The sibling packages come straight from their repos, so CI works before and after they're on PyPI.
+      - run: |
+          pip install git+https://github.com/sandeepsirodia/whatshiring git+https://github.com/sandeepsirodia/answerbank \
+                      git+https://github.com/sandeepsirodia/ratekeeper git+https://github.com/sandeepsirodia/ghosted \
+                      playwright pdfplumber
+          python -m playwright install --with-deps chromium
+      - run: python -m unittest discover -s tests -v

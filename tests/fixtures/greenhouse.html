@@ -1,0 +1,46 @@
+<!doctype html>
+<!-- Shape of a real Greenhouse application form (job-boards.greenhouse.io, Sept 2026): <label for> labels,
+     custom dropdowns (role=combobox) whose options appear only when opened, each paired with a hidden
+     required input, and an invisible reCAPTCHA textarea. Trimmed; no Greenhouse code or styling. -->
+<html><head><meta charset="utf-8"><title>Backend Engineer at Acme</title>
+<style>.opts{border:1px solid #ccc}.opts[hidden]{display:none}</style></head>
+<body>
+<h1>Backend Engineer</h1>
+<form id="application" onsubmit="event.preventDefault(); submitted()">
+  <div class="field"><label for="first_name">First Name<span>*</span></label><input id="first_name" type="text" aria-required="true"></div>
+  <div class="field"><label for="last_name">Last Name<span>*</span></label><input id="last_name" type="text" aria-required="true"></div>
+  <div class="field"><label for="email">Email<span>*</span></label><input id="email" type="text" aria-required="true"></div>
+  <div class="field"><label for="phone">Phone<span>*</span></label><input id="phone" type="tel" aria-required="true"></div>
+  <div class="field"><label for="resume">Attach</label><input id="resume" type="file"></div>
+  <div class="field"><label for="question_1">LinkedIn Profile</label><input id="question_1" type="text"></div>
+  <div class="field select">
+    <label for="question_2">Are you legally authorized to work in the United States?*</label>
+    <input id="question_2" role="combobox" aria-required="true" autocomplete="off" readonly>
+    <input type="text" required style="opacity:0;height:0;width:0;border:0;padding:0" tabindex="-1">
+    <div class="opts" hidden><div role="option">Yes</div><div role="option">No</div></div>
+  </div>
+  <div class="field select">
+    <label for="question_3">Do you now or in the future require sponsorship for employment visa status?*</label>
+    <input id="question_3" role="combobox" aria-required="true" autocomplete="off" readonly>
+    <input type="text" required style="opacity:0;height:0;width:0;border:0;padding:0" tabindex="-1">
+    <div class="opts" hidden><div role="option">Yes</div><div role="option">No</div></div>
+  </div>
+  <div class="field"><label for="question_4">What is your notice period?*</label><input id="question_4" type="text" aria-required="true"></div>
+  <textarea name="g-recaptcha-response" style="display:none"></textarea>
+  <button type="submit">Submit application</button>
+</form>
+<div id="done" hidden><h2>Thank you for applying.</h2></div>
+<script>
+  // A tiny stand-in for the real custom dropdown: opens on click, closes on Escape or a choice.
+  for (const box of document.querySelectorAll('[role=combobox]')) {
+    const list = box.parentElement.querySelector('.opts');
+    box.addEventListener('click', () => { document.querySelectorAll('.opts').forEach(o => o.hidden = true); list.hidden = false; });
+    for (const opt of list.querySelectorAll('[role=option]')) opt.addEventListener('click', () => {
+      box.value = opt.textContent; box.nextElementSibling.value = opt.textContent; list.hidden = true;  // as the real widget does
+    });
+  }
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('.opts').forEach(o => o.hidden = true); });
+  window.submissions = 0;
+  function submitted() { window.submissions++; document.getElementById('application').hidden = true; document.getElementById('done').hidden = false; }
+</script>
+</body></html>

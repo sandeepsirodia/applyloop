@@ -1,0 +1,28 @@
+<!doctype html>
+<!-- Shape of a real Lever application form (jobs.lever.co/<org>/<id>/apply, Sept 2026): named inputs, question
+     "cards" whose text sits in the card rather than a <label for>, radio groups, a plain <select>, and an
+     embedded hCaptcha iframe that is present on every visit. Trimmed; no Lever code or styling. -->
+<html><head><meta charset="utf-8"><title>Platform Engineer - Globex</title></head>
+<body>
+<form id="application-form" onsubmit="event.preventDefault(); this.hidden = true; document.getElementById('done').hidden = false">
+  <ul>
+    <li class="application-question"><label>Resume/CV ✱<input type="file" name="resume" id="resume-upload-input"></label></li>
+    <li class="application-question"><label>Full name ✱<input type="text" name="name" required></label></li>
+    <li class="application-question"><label>Email ✱<input type="email" name="email" required></label></li>
+    <li class="application-question"><label>Phone ✱<input type="text" name="phone"></label></li>
+    <li class="application-question"><label>LinkedIn URL<input type="text" name="urls[LinkedIn]"></label></li>
+  </ul>
+  <div class="application-question">
+    <div class="application-label">Will you now or in the future require visa sponsorship? ✱</div>
+    <label><input type="radio" name="cards[abc][field0]" value="Yes" required> Yes</label>
+    <label><input type="radio" name="cards[abc][field0]" value="No"> No</label>
+  </div>
+  <div class="application-question">
+    <div class="application-label">How many years of experience do you have with Python?</div>
+    <select name="cards[abc][field1]"><option>Select...</option><option>0-2</option><option>3-5</option><option>5+</option></select>
+  </div>
+  <iframe src="about:blank#hcaptcha-invisible" style="width:0;height:0;border:0" title="hCaptcha"></iframe>
+  <button type="submit">SUBMIT APPLICATION</button>
+</form>
+<div id="done" hidden><h3>Application submitted!</h3><p>Thank you for your application.</p></div>
+</body></html>

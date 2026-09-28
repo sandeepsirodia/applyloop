@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "applyloop"
+version = "0.1.0"
+description = "A local job-search agent that fills applications in your own Chrome, asks each question once, respects rate limits, and learns from the replies."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Sandeep Sirodia" }]
+requires-python = ">=3.10"
+dependencies = ["whatshiring>=0.1", "answerbank>=0.1", "ratekeeper>=0.1", "ghostclock>=0.1", "playwright>=1.40"]
+keywords = ["job-search", "job-applications", "automation", "playwright", "local-first", "greenhouse", "lever", "ashby"]
+classifiers = ["Programming Language :: Python :: 3", "Topic :: Office/Business", "Environment :: Web Environment"]
+
+[project.optional-dependencies]
+pdf = ["pdfplumber>=0.10"]
+
+[project.urls]
+Homepage = "https://github.com/sandeepsirodia/applyloop"
+
+[project.scripts]
+applyloop = "applyloop:main"
+
+[tool.setuptools]
+packages = ["applyloop"]
+
+[tool.setuptools.package-data]
+applyloop = ["ui.html"]
