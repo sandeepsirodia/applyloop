@@ -271,6 +271,23 @@ class TestPipeline(Base):
         self.assertGreater(len(picked), 4, "the floor let in the weaker Java matches, not the Haskell ones")
         self.assertIn("only %d good matches today (target 10, floor 0.55)" % len(picked), self.store.events()[-1]["message"])
 
+    def test_remote_from_keeps_only_remote_jobs_open_to_you(self):
+        con = whatshiring.open_db(self.jobs_db)
+        mk = lambda i, loc, desc="Python, Go, PostgreSQL, Kafka, AWS": whatshiring.make_job(  # noqa: E731
+            "greenhouse", "co%d" % i, i, "Co%d" % i, "Backend Engineer", loc, "u", "%s/greenhouse.html" % self.base, time.time(), desc)
+        for i, (loc, desc) in enumerate([("Remote - India", None), ("Remote - US", None), ("Hybrid - Bengaluru", None),
+                                          ("Remote", None), ("Remote", "Python, Go, Kafka. You must be located in the United States.")]):
+            j = mk(i, loc, desc) if desc else mk(i, loc)
+            whatshiring.save_org(con, "greenhouse", j["org"], [j], time.time())
+        con.commit()
+        con.close()
+        self.store.set("remote", True)
+        self.store.set("remote_from", "India")
+        self.store.set("fit_floor", 0.0)
+        picked = {j["location"]: j for j in self.loop.discover()}
+        self.assertEqual(sorted(picked), ["Remote", "Remote - India"])
+        self.assertIn("check it's open to someone in India", self.store.job(picked["Remote"]["id"])["reason"])
+
     def test_e11_uploaded_resume_needs_review_before_auto_approval(self):
         self.known_answers()
         self.store.set("auto_approve", True)

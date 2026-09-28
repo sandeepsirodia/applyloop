@@ -155,6 +155,8 @@ function render() {
   fill($("settingsBox"),
     h("div", {class: "row"}, chk("dry_run", "Dry run (fill forms, never submit)"), chk("auto_approve", "Auto-approve good matches"),
       chk("allow_drafted", "Allow drafted essay answers in auto-approve"), chk("remote", "Remote only")),
+    h("div", {class: "row", style: "margin-top:8px"}, h("label", {}, "Remote jobs open to someone living in ",
+      h("input", {value: s.remote_from || "", placeholder: "e.g. India", size: 12, onchange: e => setting("remote_from", e.target.value.trim() || null)}))),
     h("div", {class: "row", style: "margin-top:8px"}, num("fit_threshold", 0.05), num("fit_floor", 0.05), num("daily_cap", 1), num("daily_target", 1), num("cooldown_days", 1)));
   renderTabs();
 }

@@ -103,7 +103,8 @@ class Loop:
         con = whatshiring.open_db(self.jobs_db)
         try:
             mine = set().union(*(self._skills(l) for l in self.resumes()))
-            res = whatshiring.match(con, mine, s["roles"] + s["adjacent_accepted"], now, s["level"], s["remote"], s["location"], top=1000)
+            res = whatshiring.match(con, mine, s["roles"] + s["adjacent_accepted"], now, s["level"], s["remote"], s["location"], top=1000,
+                                    remote_from=s["remote_from"])
             descs = {r["id"]: r["description_text"] for r in con.execute("SELECT id, description_text FROM jobs")}
         finally:
             con.close()
@@ -122,6 +123,8 @@ class Loop:
         for j in good[:target]:
             variant = self._best_variant(j)
             self.store.upsert_ranked(dict(j, description_text=descs.get(j["id"], "")), j["score"], j["parts"], variant)
+            if j.get("remote_ok") == "check":
+                self.store.move(j["id"], "ranked", "says only \"Remote\": check it's open to someone in %s before approving" % s["remote_from"])
         if len(good) < target:
             self.store.log("only %d good matches today (target %d, floor %.2f)" % (len(good), target, s["fit_floor"]), "warn")
         elif threshold < s["fit_threshold"]:

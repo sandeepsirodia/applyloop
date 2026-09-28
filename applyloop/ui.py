@@ -81,7 +81,7 @@ class App:
             st.log("control: %s" % a)
         elif path == "/api/settings":
             allowed = {"auto_approve", "fit_threshold", "fit_floor", "allow_drafted", "daily_cap", "daily_target", "cooldown_days",
-                       "blocklist", "dry_run", "level", "remote", "location", "adjacent_accepted"}
+                       "blocklist", "dry_run", "level", "remote", "remote_from", "location", "adjacent_accepted"}
             for k, v in body.items():
                 if k not in allowed:
                     raise ValueError("unknown setting %s" % k)

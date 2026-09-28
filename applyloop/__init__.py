@@ -23,6 +23,7 @@ def main(argv=None, out=None):
     i.add_argument("--resume", required=True)
     i.add_argument("--label", default="main")
     i.add_argument("--roles", required=True, help='comma-separated, e.g. "backend engineer, platform engineer"')
+    i.add_argument("--remote-from", metavar="COUNTRY", help='remote jobs only, open to someone living in COUNTRY, e.g. "India"')
     r = sub.add_parser("resume", help="see what a parser gets from a resume")
     r.add_argument("path")
     u = sub.add_parser("ui", help="start the local UI (the worker starts paused and in dry-run mode)")
@@ -48,6 +49,9 @@ def main(argv=None, out=None):
             from .ui import add_resume_file
             res = add_resume_file(store, a.label, os.path.abspath(a.resume))
             store.set("roles", [x.strip() for x in a.roles.split(",") if x.strip()])
+            if a.remote_from:
+                store.set("remote", True)
+                store.set("remote_from", a.remote_from)
             out.write("Added resume %s (%d parsing finding(s)) and %d role(s).\n" % (a.label, len(res["findings"]), len(store.get("roles"))))
             out.write("Next: `whatshiring fetch`, then `applyloop ui`. It starts in dry-run mode: forms are filled, never submitted.\n")
         elif a.cmd == "status":

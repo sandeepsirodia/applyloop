@@ -9,7 +9,7 @@ HOME = os.path.join(os.path.expanduser("~"), ".applyloop")
 
 DEFAULTS = {
     "roles": [], "adjacent_accepted": [], "resumes": {}, "default_resume": None, "profile": {},
-    "level": None, "remote": False, "location": None,
+    "level": None, "remote": False, "remote_from": None, "location": None,
     "auto_approve": False, "fit_threshold": 0.75, "fit_floor": 0.55, "allow_drafted": False,
     "daily_cap": 15, "daily_target": 15, "cooldown_days": 90, "blocklist": [],
     "kill_switch": False, "dry_run": True, "state": "paused",
