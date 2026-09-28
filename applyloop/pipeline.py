@@ -139,11 +139,21 @@ class Loop:
 
     # -------------------------------------------------- prepare (fill, never submit)
 
+    @staticmethod
+    def form_url(job):
+        """Greenhouse listings often point at a company's marketing page wrapping the form (…?gh_jid=123); the
+        board's own page is the form itself, lighter and consistent."""
+        parts = job["job_id"].split(":")
+        if parts[0] == "greenhouse" and len(parts) == 3:
+            return "https://job-boards.greenhouse.io/%s/jobs/%s" % (parts[1], parts[2])
+        return job["apply_url"]
+
     def _open(self, job):
-        site = host(job["apply_url"])
+        url = self.form_url(job)
+        site = host(url)
         with self.keeper.slot(site):
             page = self.browser.page()
-            page.goto(job["apply_url"], wait_until="domcontentloaded", timeout=60000)
+            page.goto(url, wait_until="domcontentloaded", timeout=60000)
             try:
                 page.wait_for_selector("input, textarea, select", timeout=15000)
             except Exception:  # noqa: BLE001
@@ -182,6 +192,12 @@ class Loop:
                 return "waiting"
             resume = self._resume_json(job["resume_variant"])
             fields = forms.extract(page)
+            closed = forms.posting_closed(page)
+            if closed or not any(f["kind"] in ("email", "file") or "name" in f["question"].lower() for f in fields):
+                reason = closed or "no application form on the page"
+                self.store.move(job["job_id"], "failed", reason)
+                self.store.log("%s — %s: %s" % (job["company"], job["title"], reason), "warn")
+                return "failed"
             plan, pending = forms.answer_fields(page, fields, forms.profile_from_resume(resume), self.bank, self._job_ctx(job),
                                                 self.resumes()[job["resume_variant"]]["file"])
             forms.fill(page, plan)

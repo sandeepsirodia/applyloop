@@ -86,7 +86,8 @@ PROFILE_FIELDS = [
     ("preferred_name", r"^preferred (first )?name"), ("name", r"^(full |legal )?name$"), ("email", r"^e-?mail( address)?$"),
     ("phone", r"^(mobile |cell )?phone( number)?$"), ("linkedin", r"linkedin"), ("github", r"github"),
     ("website", r"^(personal )?(website|portfolio)( url)?$|^other website"), ("location", r"^(current )?location$|^city$"),
-    ("current_company", r"^current (company|employer)|^company$"), ("current_title", r"^current (title|role|position)"),
+    ("current_company", r"^(current|most recent) (company|employer)|^company$"),
+    ("current_title", r"^(current|most recent) (job )?(title|role|position)"),
 ]
 PROFILE_FIELDS = [(k, re.compile(rx, re.I)) for k, rx in PROFILE_FIELDS]
 RESUME_FILE_RE = re.compile(r"resume|\bcv\b|curriculum", re.I)
@@ -108,6 +109,18 @@ def profile_from_resume(resume):
         "email": b.get("email"), "phone": b.get("phone"), "linkedin": urls.get("linkedin"), "github": urls.get("github"),
         "website": b.get("url"), "location": ", ".join(x for x in (loc.get("city"), loc.get("region")) if x) or None,
         "current_company": work.get("name"), "current_title": work.get("position")}.items() if v}
+
+
+CLOSED_RE = re.compile(r"page not found|(job|position|posting|role) (is )?no longer (available|open|accepting)|"
+                       r"no longer accepting applications|this (job|position) has (been filled|closed)|job not found", re.I)
+
+
+def posting_closed(page):
+    try:
+        m = CLOSED_RE.search(page.inner_text("body")[:3000])
+    except Exception:  # noqa: BLE001
+        return None
+    return "posting closed (the page says: %s)" % m.group(0) if m else None
 
 
 def extract(page):

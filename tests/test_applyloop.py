@@ -105,7 +105,7 @@ class Base(unittest.TestCase):
         self.store.set("resumes", r)
 
     def add_job(self, fixture, fit=0.82, company="Acme", title="Backend Engineer", job_id=None):
-        job = {"id": job_id or "greenhouse:%s:%s" % (company.lower(), fixture), "company": company, "title": title,
+        job = {"id": job_id or "fixture:%s:%s" % (company.lower(), fixture), "company": company, "title": title,
                "apply_url": "%s/%s.html" % (self.base, fixture), "location": "San Francisco, CA", "description_text": "Python and Kafka."}
         self.store.upsert_ranked(job, fit, {"skills": 1.0}, "main")
         return self.store.job(job["id"])
@@ -234,6 +234,15 @@ class TestPipeline(Base):
         self.assertEqual(self.keeper.next_allowed("127.0.0.1"), float("inf"))
         self.assertLess(self.keeper.next_allowed("jobs.lever.co"), float("inf"))
         self.assertIn("captcha", self.store.job(job["job_id"])["reason"])
+
+    def test_closed_posting_is_failed_not_prepared(self):
+        job = self.add_job("closed")
+        self.assertEqual(self.loop.prepare(job), "failed")
+        self.assertIn("posting closed", self.store.job(job["job_id"])["reason"])
+
+    def test_greenhouse_jobs_open_the_boards_own_form(self):
+        self.assertEqual(Loop.form_url({"job_id": "greenhouse:databricks:8679982002", "apply_url": "https://databricks.com/x?gh_jid=8679982002"}),
+                         "https://job-boards.greenhouse.io/databricks/jobs/8679982002")
 
     def test_e8_login_page_pauses_and_never_types_a_password(self):
         job = self.add_job("login")
