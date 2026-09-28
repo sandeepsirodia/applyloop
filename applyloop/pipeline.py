@@ -247,7 +247,7 @@ class Loop:
             if pending or forms.answers_hash(plan) != forms.answers_hash(job["answers"] or []):
                 self.store.move(job["job_id"], "prepared", "the form changed since you approved it: review again", answers=plan, pending=pending)
                 return "prepared"
-            forms.fill(page, plan)
+            forms.fill(page, plan, upload=True)
             before = self._screenshot(page, job, "before-submit")
             ok, detail = forms.submit(page)
             after = self._screenshot(page, job, "after-submit")

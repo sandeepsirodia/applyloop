@@ -42,7 +42,7 @@ A dry run against a live Greenhouse application page (Affirm, Sept 2026), with s
 FILLED   First Name, Last Name, Preferred Name, Email, Phone, LinkedIn       from the resume
 FILLED   Are you legally authorized to work in the United States?  → Yes     answerbank (pattern)
 FILLED   Do you now or in the future require sponsorship …?        → No      answerbank (pattern)
-FILLED   Resume/CV                                                           uploaded
+PLANNED  Resume/CV                                                           attached only when you submit
 ASK YOU  Pronouns · U.S. State or Canadian Province · How did you first learn about Affirm? · …
 ```
 

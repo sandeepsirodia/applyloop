@@ -161,13 +161,16 @@ def answer_fields(page, fields, profile, bank, job, resume_path):
     return plan, pending
 
 
-def fill(page, plan):
+def fill(page, plan, upload=False):
+    """Fill the form. Files are attached only when `upload` is set (at submit): some forms, Greenhouse's among them,
+    send an attachment to the company the moment it's selected, before any submit."""
     for f in plan:
         sel = '[data-applyloop="%s"]' % f["uid"]
         v = f["value"]
         k = f["kind"]
         if k == "file":
-            page.set_input_files(sel, v)
+            if upload:
+                page.set_input_files(sel, v)
         elif k in ("text", "email", "tel", "url", "textarea", "number"):
             page.fill(sel, str(v))
         elif k == "select":

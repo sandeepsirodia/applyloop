@@ -169,6 +169,7 @@ class TestPipeline(Base):
         job = self.store.job(job["job_id"])
         self.assertTrue(os.path.exists(job["screenshot"]))
         self.assertEqual(len([a for a in job["answers"] if a["kind"] != "file"]), 8)
+        self.assertIn("file", [a["kind"] for a in job["answers"]], "the resume is planned for the file field...")
         self.loop.approve(job["job_id"])
         self.assertEqual(self.loop.submit(self.store.job(job["job_id"])), "dry-run")
         self.assertEqual(self.store.q("SELECT COUNT(*) n FROM applications")[0]["n"], 0)
