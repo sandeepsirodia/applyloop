@@ -17,7 +17,8 @@ EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 PHONE_RE = re.compile(r"(?<!\d)(?:\+?\d[\d ().-]{7,}\d)(?!\d)")
 URL_RE = re.compile(r"(?:https?://)?(?:www\.)?(linkedin\.com/in/[\w-]+|github\.com/[\w-]+)[/\w-]*", re.I)
 HEADINGS = {"experience": r"(work |professional )?experience|employment( history)?",
-            "education": r"education|academic", "skills": r"(technical )?skills|technologies|tech stack"}
+            "education": r"(education(al)?|academic)( (details?|background|qualifications?|history|summary))?",
+            "skills": r"(technical )?skills|technologies|tech stack"}
 SPACED_RE = re.compile(r"\b(?:[A-Za-z] ){3,}[A-Za-z]\b")
 BAD_GLYPH_RE = re.compile("[-�□]")
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"

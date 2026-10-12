@@ -5,6 +5,7 @@ import functools
 import http.server
 import json
 import os
+import re
 import sys
 import tempfile
 import threading
@@ -588,6 +589,23 @@ class TestIntake(Base):
         self.assertEqual(intake.verify_against_source(a, doc["text"]), [])
         invented = dict(a, basics=dict(a["basics"], name="Ada Lovelace", label="Principal Engineer at Google"))
         self.assertEqual(intake.verify_against_source(invented, doc["text"]), [("basics.label", "Principal Engineer at Google")])
+
+    def test_compound_heading_like_academic_details_is_recognized(self):
+        path = os.path.join(self.dir, "resume2.md")
+        with open(path, "w") as f:
+            f.write("Ada Lovelace\nada@example.com\n\n"
+                    "Academic Details\nB. Tech in Computer Science - MIT 2015 - 2019\n\n"
+                    "Professional Experience\nEngineer at Analytical Engines\n\n"
+                    "Technical Skills\nPython, Go\n")
+        structured, found, _ = intake.intake(path)
+        self.assertNotIn("headings", [f["kind"] for f in found])
+        self.assertIn("B. Tech in Computer Science - MIT 2015 - 2019", structured["x-sections"]["education"])
+
+    def test_bare_education_and_academic_headings_still_match(self):
+        rx = intake.HEADINGS["education"]
+        self.assertTrue(re.fullmatch(rx, "education"))
+        self.assertTrue(re.fullmatch(rx, "academic"))
+        self.assertFalse(re.fullmatch(rx, "academic integrity"))
 
 
 if __name__ == "__main__":
