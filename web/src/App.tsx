@@ -1,5 +1,5 @@
 import { type ReactNode } from "react";
-import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import AppShell from "@/components/layout/AppShell";
 import { AppStateProvider } from "@/hooks/use-app-state";
@@ -43,9 +43,9 @@ export default function App() {
       {/* One poll + one event stream for the whole session: it lives here, above the routes, so
          switching pages never tears it down and reopens it. */}
       <AppStateProvider>
-        <HashRouter>
+        <BrowserRouter>
           <Shell />
-        </HashRouter>
+        </BrowserRouter>
       </AppStateProvider>
     </AuthProvider>
   );

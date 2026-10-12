@@ -55,5 +55,6 @@ are no user accounts to manage.
 
 ## Stack
 
-Vite, React 19, TypeScript, Tailwind v4, shadcn/ui (`new-york` style), React Router (`HashRouter` — no
-server-side route handling needed beyond the SPA-shell fallback `ui.py` already does), Sonner for toasts.
+Vite, React 19, TypeScript, Tailwind v4, shadcn/ui (`new-york` style), React Router (`BrowserRouter` — plain
+`/approvals`-style URLs, no `#`; `ui.py`'s static-file handler already falls back to the SPA shell for any
+path that isn't a real file, so no extra server routing was needed), Sonner for toasts.
