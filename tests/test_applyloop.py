@@ -198,6 +198,34 @@ class TestForms(Base):
         self.assertIn("They/Them", str(ctx.exception))
         page.close()
 
+    def test_combobox_types_to_narrow_a_full_address_down_to_a_country_match(self):
+        # Found on real postings (openai, notion, elevenlabs): a "Location"/"Where are you currently located?"
+        # dropdown only ever offers countries, and only reveals them once you type to search. The stored
+        # answer is a full address, which exists as a literal option on no such page.
+        page = self.browser.page()
+        page.set_content("""<html><body>
+          <label for="loc">Location</label>
+          <input id="loc" role="combobox">
+          <div class="opts" hidden><div role="option">United States</div><div role="option">India</div></div>
+          <script>
+            const box = document.getElementById('loc'), list = box.nextElementSibling;
+            box.addEventListener('click', () => { list.hidden = false; });
+            box.addEventListener('input', () => {
+              const q = box.value.trim().toLowerCase();
+              for (const o of list.querySelectorAll('[role=option]'))
+                o.style.display = (!q || o.textContent.toLowerCase().includes(q)) ? '' : 'none';
+            });
+            for (const o of list.querySelectorAll('[role=option]'))
+              o.addEventListener('click', () => { box.value = o.textContent; list.hidden = true; });
+          </script>
+        </body></html>""")
+        fields = forms.extract(page)
+        (f,) = [x for x in fields if x["question"] == "Location"]
+        f["value"] = "Jaipur, Rajasthan, India"  # no option for this; only the bare country is offered
+        forms.fill(page, [f])
+        self.assertEqual(page.input_value("#loc"), "India")
+        page.close()
+
 
 class TestPipeline(Base):
     def test_e1_dry_run_fills_everything_and_never_submits(self):

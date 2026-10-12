@@ -123,6 +123,14 @@ def posting_closed(page):
     return "posting closed (the page says: %s)" % m.group(0) if m else None
 
 
+def location_segments(value):
+    """'Jaipur, Rajasthan, India' -> ['Jaipur, Rajasthan, India', 'Rajasthan, India', 'India']. A location
+    dropdown is usually country-only (sometimes city-only), so progressively narrower trailing parts of a
+    full address are tried after the exact value, instead of giving up because nothing matches the whole string."""
+    parts = [p.strip() for p in value.split(",") if p.strip()]
+    return [", ".join(parts[i:]) for i in range(len(parts))] or [value]
+
+
 def extract(page):
     return page.evaluate(EXTRACT_JS)
 
@@ -197,20 +205,34 @@ def fill(page, plan, upload=False):
         elif k == "buttons":
             page.locator('[data-applyloop-option="%s"]' % f["uid"]).filter(has_text=re.compile(r"^\s*%s\s*$" % re.escape(v), re.I)).first.click()
         elif k == "combobox":
-            # Found on real postings: the first click sometimes doesn't render the option list in time, and
-            # matching was case-sensitive while the "buttons" case above wasn't. Both made real dropdowns
-            # (openai, notion, elevenlabs) wait the full default 30s for an option that was in fact on the
-            # page, then raise a bare Playwright trace with no indication of which field or value it was.
-            found = None
-            for _ in range(2):
-                page.click(sel)
-                page.wait_for_timeout(150)
-                cand = page.locator('[role="option"]:visible').filter(has_text=re.compile(r"^\s*%s\s*$" % re.escape(v), re.I))
-                if cand.count():
-                    found = cand
+            # Found on real postings: matching was case-sensitive (openai, notion, elevenlabs all have an
+            # option the page genuinely offers, missed only on case). A "Location" dropdown is a second,
+            # separate case: it's usually a type-to-search country/city picker, and the stored answer is a
+            # full address ("Jaipur, Rajasthan, India") that exists on no dropdown as a literal option, only
+            # a narrower part of it does ("India"). Try the full value first, then narrower trailing segments.
+            found, tried = None, []
+            for value in (location_segments(v) if "," in v else [v]):
+                tried.append(value)
+                for _ in range(2):
+                    page.click(sel)
+                    page.wait_for_timeout(150)
+                    try:
+                        box = page.locator(sel)
+                        if not box.evaluate("e => e.tagName === 'INPUT' && !e.readOnly"):
+                            raise ValueError("not a plain editable input")
+                        box.fill("")
+                        box.type(value, delay=15)
+                        page.wait_for_timeout(200)
+                    except Exception:  # noqa: BLE001 (typing isn't always possible or needed; fall back to a plain click)
+                        pass
+                    cand = page.locator('[role="option"]:visible').filter(has_text=re.compile(r"^\s*%s\s*$" % re.escape(value), re.I))
+                    if cand.count():
+                        found = cand
+                        break
+                if found:
                     break
             if found is None:
-                raise RuntimeError("the dropdown for %r never showed an option matching %r" % (f["question"], v))
+                raise RuntimeError("the dropdown for %r never showed an option matching any of %s" % (f["question"], tried))
             found.first.click(timeout=5000)
 
 
