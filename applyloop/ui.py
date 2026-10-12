@@ -1,11 +1,13 @@
 """The local UI: watch the pipeline live, approve, answer questions, add roles and resumes, pause sites.
 
-Standard-library HTTP server bound to 127.0.0.1, with a random token per session. Every API call needs that
-token, and requests whose Host/Origin isn't this machine (DNS rebinding, another site in your browser) are
-refused outright. The page shell itself (the React app's static files) is public, the same as any site with
-a login screen: the token is handed out by POST /api/login, checked against $APPLYLOOP_PASSWORD, and the
-React app then sends it back as X-Token on every call. With no password set (the default for `applyloop ui`
-on your own machine), login is disabled and the token is only ever the one printed to your terminal.
+Standard-library HTTP server bound to 127.0.0.1, with a token saved to ~/.applyloop/session_token (minted
+once, then reused across restarts, so a crash or a redeploy doesn't force everyone to log back in). Every
+API call needs that token, and requests whose Host/Origin isn't this machine (DNS rebinding, another site in
+your browser) are refused outright. The page shell itself (the React app's static files) is public, the same
+as any site with a login screen: the token is handed out by POST /api/login, checked against
+$APPLYLOOP_PASSWORD, and the React app then sends it back as X-Token on every call. With no password set
+(the default for `applyloop ui` on your own machine), login is disabled and the token is only ever the one
+printed to your terminal.
 """
 import base64
 import json
@@ -24,12 +26,31 @@ from .store import HOME
 PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui.html")
 WEB_DIST = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web_dist")  # built by `cd web && npm run build`
 LOGIN_WINDOW, LOGIN_MAX_ATTEMPTS = 60.0, 5  # per source address, before a short lockout
+TOKEN_FILE = os.path.join(HOME, "session_token")
+
+
+def _persistent_token():
+    """A token that survives restarting `applyloop ui` -- otherwise every restart (every deploy, every
+    crash) silently logs out anyone with the page open, since a freshly-random token no longer matches
+    what their browser already stored. Read the one saved on disk if there is one, else mint and save one."""
+    try:
+        with open(TOKEN_FILE) as f:
+            saved = f.read().strip()
+        if saved:
+            return saved
+    except OSError:
+        pass
+    token = secrets.token_urlsafe(24)
+    os.makedirs(HOME, exist_ok=True)
+    with open(TOKEN_FILE, "w") as f:
+        f.write(token)
+    return token
 
 
 class App:
     def __init__(self, loop, port=8765, token=None, password=None):
         self.loop, self.port = loop, port
-        self.token = token or secrets.token_urlsafe(24)
+        self.token = token or _persistent_token()
         # None (the default `applyloop ui` case) disables /api/login entirely: the only way in is the one
         # token printed to the terminal. Set $APPLYLOOP_PASSWORD to turn on password login for a deployment.
         self.password = password if password is not None else os.environ.get("APPLYLOOP_PASSWORD") or None

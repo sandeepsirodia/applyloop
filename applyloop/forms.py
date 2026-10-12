@@ -35,6 +35,22 @@ EXTRACT_JS = r"""
     const own = e.closest('label'); if (own) return clean(own.innerText);
     return clean(e.value);
   };
+  // A multi-select checkbox question (e.g. "How did you hear about us?") is often built as N
+  // independently-named/id'd checkboxes with no shared `name` to group them by. Without this, each one
+  // falls through to the single-checkbox "consent" path below and surfaces as its own nonsense question
+  // (its own option text, e.g. "LinkedIn"). Only an EXPLICIT semantic group (fieldset+legend, or
+  // role=group/radiogroup with a label) is trusted as "these checkboxes are one question" -- anything
+  // without that stays independent, so a real standalone "I agree to the terms" checkbox is unaffected.
+  const explicitGroupOf = e => {
+    const g = e.closest('fieldset, [role="group"], [role="radiogroup"]');
+    if (!g) return null;
+    let label = '';
+    if (g.tagName === 'FIELDSET') { const legend = g.querySelector(':scope > legend'); if (legend) label = clean(legend.innerText); }
+    if (!label) { const by = g.getAttribute('aria-labelledby');
+      if (by) label = clean(by.split(' ').map(x => (document.getElementById(x) || {}).innerText || '').join(' ')); }
+    if (!label && g.getAttribute('aria-label')) label = clean(g.getAttribute('aria-label'));
+    return label ? { el: g, label } : null;
+  };
   const fields = [], seenGroups = new Set();
   let n = 0;
   const tag = (e) => { const uid = 'al' + (n++); e.setAttribute('data-applyloop', uid); return uid; };
@@ -45,6 +61,20 @@ EXTRACT_JS = r"""
     if (e.getAttribute('role') !== 'combobox' && e.tagName === 'INPUT' && !e.id && !e.name && e.required && !visible(e)) continue;
     const required = !!(e.required || e.getAttribute('aria-required') === 'true');
     if (type === 'radio' || type === 'checkbox') {
+      if (type === 'checkbox') {
+        const explicit = explicitGroupOf(e);
+        if (explicit) {
+          if (seenGroups.has(explicit.el)) continue;
+          const boxes = Array.from(explicit.el.querySelectorAll('input[type="checkbox"]'));
+          if (boxes.length > 1) {
+            seenGroups.add(explicit.el);
+            const uid = tag(explicit.el);
+            boxes.forEach((g, i) => g.setAttribute('data-applyloop-option', uid + ':' + i));
+            fields.push({uid, kind: 'checkbox', question: explicit.label, required: boxes.some(b => b.required), options: boxes.map(optionLabel)});
+            continue;
+          }
+        }
+      }
       const key = e.name || e.id;
       if (seenGroups.has(key)) continue;
       seenGroups.add(key);

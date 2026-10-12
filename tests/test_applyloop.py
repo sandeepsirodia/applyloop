@@ -144,6 +144,31 @@ class TestForms(Base):
         self.assertEqual(page.evaluate("window.submissions"), 0)
         page.close()
 
+    def test_independently_named_checkboxes_under_a_legend_are_one_question(self):
+        page = self.browser.page()
+        page.set_content(
+            "<fieldset><legend>How did you hear about this role?</legend>"
+            "<div><input type=checkbox id=h1 name=h1><label for=h1>LinkedIn</label></div>"
+            "<div><input type=checkbox id=h2 name=h2><label for=h2>Glassdoor</label></div>"
+            "<div><input type=checkbox id=h3 name=h3><label for=h3>Referral</label></div>"
+            "</fieldset>"
+            "<div><input type=checkbox id=ack name=ack required><label for=ack>I agree to the terms</label></div>")
+        fields = forms.extract(page)
+        self.assertEqual(len(fields), 2, fields)
+        grouped = next(f for f in fields if f["kind"] == "checkbox")
+        self.assertEqual(grouped["question"], "How did you hear about this role?")
+        self.assertEqual(grouped["options"], ["LinkedIn", "Glassdoor", "Referral"])
+        consent = next(f for f in fields if f["kind"] == "consent")
+        self.assertEqual(consent["question"], "I agree to the terms")
+        # fill() itself, not answerbank's catalog matching, is what this test is about: the grouped field's
+        # options came out in DOM order, and `fill` must check the right sibling by that same index.
+        forms.fill(page, [dict(grouped, value="Referral"), dict(consent, value="Yes")])
+        self.assertTrue(page.is_checked("#h3"))
+        self.assertFalse(page.is_checked("#h1"))
+        self.assertFalse(page.is_checked("#h2"))
+        self.assertTrue(page.is_checked("#ack"))
+        page.close()
+
     def test_lever_shape_cards_radios_and_select(self):
         self.bank.set("needs_sponsorship", True)
         self.bank.set("years_experience[python]", 6)
@@ -554,6 +579,16 @@ class TestUI(Base):
         code, body = self._post(base, "/api/login", {"password": "s3cret"})
         self.assertEqual(code, 401)
         self.assertIn("too many attempts", body["error"])
+
+    def test_session_token_survives_a_restart(self):
+        token_file = os.path.join(self.dir, "session_token")
+        patch = unittest.mock.patch.object(ui_module, "TOKEN_FILE", token_file)
+        patch.start()
+        self.addCleanup(patch.stop)
+        first = App(self.loop, port=0).token
+        second = App(self.loop, port=0).token  # a fresh App(), as happens on every real restart
+        self.assertEqual(first, second)
+        self.assertTrue(os.path.exists(token_file))
 
 
 class TestIntake(Base):
