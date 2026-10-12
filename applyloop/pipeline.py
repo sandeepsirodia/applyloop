@@ -1,5 +1,6 @@
 """The loop: discover → rank → prepare → approve → submit → track, one step at a time, every step persisted."""
 import json
+import math
 import os
 import re
 import threading
@@ -152,8 +153,13 @@ class Loop:
         return job["apply_url"]
 
     def _open(self, job):
+        """(page, site, signal). `page` is None when the site is already paused waiting on a human (a prior
+        CAPTCHA, a login, a manual pause): the caller never blocks on keeper.slot() for it, so one stuck site
+        can't stall every other job behind it."""
         url = self.form_url(job)
         site = host(url)
+        if self.keeper.next_allowed(site) == math.inf:
+            return None, site, "still waiting on you from before"
         with self.keeper.slot(site):
             page = self.browser.page()
             page.goto(url, wait_until="domcontentloaded", timeout=60000)
@@ -187,7 +193,23 @@ class Loop:
         return path
 
     def prepare(self, job):
+        # Everything here, including opening the page, is guarded: a job that keeps raising (a navigation
+        # timeout, a crashed page, anything) is moved to "failed" instead of staying "ranked" forever. step()
+        # always retries the single highest-fit ranked job, so one broken posting that's never moved out of
+        # "ranked" blocks every other ranked job behind it from ever getting a turn.
+        try:
+            return self._prepare(job)
+        except Exception as e:  # noqa: BLE001
+            self.store.move(job["job_id"], "failed", "error while preparing: %s" % str(e)[:200])
+            self.store.log("%s — %s: error while preparing (%s)" % (job["company"], job["title"], str(e)[:150]), "error")
+            return "failed"
+
+    def _prepare(self, job):
         page, site, signal = self._open(job)
+        if page is None:
+            self.store.move(job["job_id"], "waiting", "%s on %s: needs you" % (signal, site))
+            self.store.log("%s: %s on %s, paused that site" % (job["company"], signal, site), "warn")
+            return "waiting"
         try:
             if signal:
                 self.store.move(job["job_id"], "waiting", "%s on %s: needs you" % (signal, site))
@@ -255,7 +277,18 @@ class Loop:
             self.store.log("%s — %s: dry run, filled but not submitted" % (job["company"], job["title"]))
             return "dry-run"
         self.store.move(job["job_id"], "submitting", None)  # a crash from here on becomes needs-check, never a resubmit
+        try:
+            return self._submit(job)
+        except Exception as e:  # noqa: BLE001 (ambiguous whether it actually submitted: needs-check, never "failed")
+            self.store.move(job["job_id"], "needs-check", "error while submitting, check whether it went through: %s" % str(e)[:200])
+            self.store.log("%s — %s: error while submitting (%s)" % (job["company"], job["title"], str(e)[:150]), "error")
+            return "needs-check"
+
+    def _submit(self, job):
         page, site, signal = self._open(job)
+        if page is None:
+            self.store.move(job["job_id"], "waiting", "%s on %s: needs you" % (signal, site))
+            return "waiting"
         try:
             if signal:
                 self.store.move(job["job_id"], "waiting", "%s on %s: needs you" % (signal, site))

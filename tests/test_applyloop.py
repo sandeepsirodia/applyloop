@@ -235,6 +235,35 @@ class TestPipeline(Base):
         self.assertLess(self.keeper.next_allowed("jobs.lever.co"), float("inf"))
         self.assertIn("captcha", self.store.job(job["job_id"])["reason"])
 
+    def test_already_paused_site_blocks_no_one_else(self):
+        # One job trips a real CAPTCHA and pauses the site.
+        first = self.add_job("captcha", company="PauseCo")
+        self.assertEqual(self.loop.prepare(first), "waiting")
+        self.assertEqual(self.keeper.next_allowed("127.0.0.1"), float("inf"))
+        # A second, unrelated job on that same now-paused site must never call keeper.slot() or open a page:
+        # it has to be told "waiting" immediately, not queued behind the first job forever.
+        second = self.add_job("greenhouse", company="OtherCo")
+        page, site, signal = self.loop._open(second)
+        self.assertIsNone(page, "a pre-paused site is never opened")
+        self.assertEqual(site, "127.0.0.1")
+        self.assertEqual(self.loop.prepare(second), "waiting")
+        self.assertIsNone(self.store.job(second["job_id"])["answers"], "nothing was ever filled for it")
+
+    def test_a_broken_posting_is_failed_not_retried_forever(self):
+        # A posting whose page never loads (here: no server behind the port) must not leave the job "ranked",
+        # or step() would keep picking the same highest-fit job on every tick and starve every other job behind it.
+        job = self.add_job("greenhouse", company="Broken")
+        job["apply_url"] = "http://127.0.0.1:1/does-not-exist"  # nothing listens on port 1: a real connection failure
+        self.store.move(job["job_id"], "ranked", None)
+        self.store.x("UPDATE pipeline SET apply_url=? WHERE job_id=?", job["apply_url"], job["job_id"])
+        result = self.loop.prepare(self.store.job(job["job_id"]))
+        self.assertEqual(result, "failed")
+        j = self.store.job(job["job_id"])
+        self.assertEqual(j["stage"], "failed")
+        self.assertIn("error while preparing", j["reason"])
+        # It must not come back on the next ranking pass either.
+        self.assertNotIn(job["job_id"], [x["job_id"] for x in self.store.jobs("ranked")])
+
     def test_closed_posting_is_failed_not_prepared(self):
         job = self.add_job("closed")
         self.assertEqual(self.loop.prepare(job), "failed")
