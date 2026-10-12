@@ -197,8 +197,21 @@ def fill(page, plan, upload=False):
         elif k == "buttons":
             page.locator('[data-applyloop-option="%s"]' % f["uid"]).filter(has_text=re.compile(r"^\s*%s\s*$" % re.escape(v), re.I)).first.click()
         elif k == "combobox":
-            page.click(sel)
-            page.locator('[role="option"]:visible').filter(has_text=re.compile(r"^\s*%s\s*$" % re.escape(v))).first.click()
+            # Found on real postings: the first click sometimes doesn't render the option list in time, and
+            # matching was case-sensitive while the "buttons" case above wasn't. Both made real dropdowns
+            # (openai, notion, elevenlabs) wait the full default 30s for an option that was in fact on the
+            # page, then raise a bare Playwright trace with no indication of which field or value it was.
+            found = None
+            for _ in range(2):
+                page.click(sel)
+                page.wait_for_timeout(150)
+                cand = page.locator('[role="option"]:visible').filter(has_text=re.compile(r"^\s*%s\s*$" % re.escape(v), re.I))
+                if cand.count():
+                    found = cand
+                    break
+            if found is None:
+                raise RuntimeError("the dropdown for %r never showed an option matching %r" % (f["question"], v))
+            found.first.click(timeout=5000)
 
 
 def answers_hash(plan):

@@ -160,6 +160,44 @@ class TestForms(Base):
         self.assertEqual(essay["source"], "drafted")
         page.close()
 
+    COMBOBOX_HTML = """<html><body>
+      <label for="pronouns">Pronouns</label>
+      <input id="pronouns" role="combobox" readonly>
+      <div class="opts" hidden><div role="option">%s</div><div role="option">He/Him</div></div>
+      <script>
+        const box = document.getElementById('pronouns'), list = box.nextElementSibling;
+        box.addEventListener('click', () => { list.hidden = !list.hidden; });
+        for (const o of list.querySelectorAll('[role=option]'))
+          o.addEventListener('click', () => { box.value = o.textContent; list.hidden = true; });
+      </script>
+    </body></html>"""
+
+    def test_combobox_matches_case_insensitively(self):
+        # Found on real postings (openai, notion, elevenlabs): matching was case-sensitive, so a real option
+        # the page genuinely had went unmatched and the click waited the full default 30s before failing.
+        page = self.browser.page()
+        page.set_content(self.COMBOBOX_HTML % "SHE/HER")  # the real page renders it upper case
+        fields = forms.extract(page)
+        (f,) = [x for x in fields if x["question"] == "Pronouns"]
+        f["value"] = "she/her"
+        forms.fill(page, [f])
+        self.assertEqual(page.input_value("#pronouns"), "SHE/HER")
+        page.close()
+
+    def test_combobox_with_no_matching_option_fails_fast_with_a_clear_message(self):
+        page = self.browser.page()
+        page.set_content(self.COMBOBOX_HTML % "She/Her")
+        fields = forms.extract(page)
+        (f,) = [x for x in fields if x["question"] == "Pronouns"]
+        f["value"] = "They/Them"  # not one of the two options on this page
+        start = time.time()
+        with self.assertRaises(RuntimeError) as ctx:
+            forms.fill(page, [f])
+        self.assertLess(time.time() - start, 5, "must fail fast, not wait out the default 30s click timeout")
+        self.assertIn("Pronouns", str(ctx.exception))
+        self.assertIn("They/Them", str(ctx.exception))
+        page.close()
+
 
 class TestPipeline(Base):
     def test_e1_dry_run_fills_everything_and_never_submits(self):
