@@ -67,11 +67,18 @@ def main(argv=None, out=None):
             loop = Loop(store=store, browser=Browser(user_data_dir=a.profile_dir, cdp_url=a.cdp_url))
             app = App(loop, a.port)
             server = app.serve()
-            out.write("applyloop is running at %s\n(paused, dry run: nothing is submitted until you switch dry run off)\n" % app.url())
+            if app.password:
+                out.write("applyloop is running at %s -- log in with the password in $APPLYLOOP_PASSWORD\n" % app.login_url())
+                open_url = app.login_url()
+            else:
+                out.write("applyloop is running at %s\n" % app.url())
+                out.write("(set $APPLYLOOP_PASSWORD before starting this for a real login screen instead of this link)\n")
+                open_url = app.url()
+            out.write("(paused, dry run: nothing is submitted until you switch dry run off)\n")
             out.flush()
             if not a.no_open:
                 import webbrowser
-                webbrowser.open(app.url())
+                webbrowser.open(open_url)
             try:
                 server.serve_forever()
             except KeyboardInterrupt:

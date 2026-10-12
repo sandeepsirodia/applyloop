@@ -27,4 +27,4 @@ applyloop = "applyloop:main"
 packages = ["applyloop"]
 
 [tool.setuptools.package-data]
-applyloop = ["ui.html"]
+applyloop = ["ui.html", "web_dist/**/*"]

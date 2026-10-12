@@ -71,9 +71,9 @@ Want to look first? `python examples/demo_ui.py` opens the UI on synthetic data 
 
 ## The UI
 
-`applyloop ui` serves one page on `127.0.0.1`, with a random token per session. It refuses requests without the token, or from another origin or host name (DNS rebinding).
+`applyloop ui` serves a React + [shadcn/ui](https://ui.shadcn.com) dashboard from the same process and port that answers the API — no separate frontend server to run. Running it plain (no `$APPLYLOOP_PASSWORD` set) prints a one-time link with a random per-session token, same as before: open it and you're in, no password to manage. Set `$APPLYLOOP_PASSWORD` and it switches to a login screen instead, so you can leave it running and come back to it without a token URL to dig up. Either way, every API request still needs that session credential, and requests are refused from another origin or host name (DNS rebinding).
 
-- **Pipeline:** live counts and log.
+- **Pipeline:** live counts and log, streamed over SSE.
 - **Approvals:** every answer, where it came from, a screenshot of the filled form, and why it wasn't auto-approved.
 - **Questions:** the new ones, answered once.
 - **Roles & resumes:** add roles, accept suggested adjacent roles, upload resume versions and see what a parser loses from each.
@@ -83,7 +83,11 @@ Want to look first? `python examples/demo_ui.py` opens the UI on synthetic data 
 
 Job titles and form questions come from other people's pages, so the page never turns them into HTML: every element is built with `textContent`.
 
-<p align="center"><img src="assets/ui-pipeline.png" alt="The pipeline tab: stage counts, a live log including a CAPTCHA pause, and recent jobs with their stages" width="860"></p>
+<p align="center"><img src="assets/dashboard-login.png" alt="The login screen" width="860"></p>
+<p align="center"><img src="assets/dashboard-pipeline.png" alt="The pipeline tab: stage counts, a live log including a CAPTCHA pause, and recent jobs with their stages" width="860"></p>
+<p align="center"><img src="assets/dashboard-approvals.png" alt="The approvals tab: a filled form's answers, where each came from, and why it wasn't auto-approved" width="860"></p>
+
+The dashboard's own source, dev workflow, and deploy instructions (it's a normal static build — put it behind a reverse proxy if it's reachable from outside your machine) are in [`web/README.md`](web/README.md).
 
 ## Built to be interrupted
 

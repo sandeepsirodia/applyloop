@@ -1,7 +1,11 @@
 """The local UI: watch the pipeline live, approve, answer questions, add roles and resumes, pause sites.
 
-Standard-library HTTP server bound to 127.0.0.1, with a random token per session. Requests without the token,
-or whose Host/Origin isn't this machine (DNS rebinding, another site in your browser), are refused.
+Standard-library HTTP server bound to 127.0.0.1, with a random token per session. Every API call needs that
+token, and requests whose Host/Origin isn't this machine (DNS rebinding, another site in your browser) are
+refused outright. The page shell itself (the React app's static files) is public, the same as any site with
+a login screen: the token is handed out by POST /api/login, checked against $APPLYLOOP_PASSWORD, and the
+React app then sends it back as X-Token on every call. With no password set (the default for `applyloop ui`
+on your own machine), login is disabled and the token is only ever the one printed to your terminal.
 """
 import base64
 import json
@@ -18,14 +22,36 @@ from . import intake
 from .store import HOME
 
 PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui.html")
+WEB_DIST = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web_dist")  # built by `cd web && npm run build`
+LOGIN_WINDOW, LOGIN_MAX_ATTEMPTS = 60.0, 5  # per source address, before a short lockout
 
 
 class App:
-    def __init__(self, loop, port=8765, token=None):
+    def __init__(self, loop, port=8765, token=None, password=None):
         self.loop, self.port = loop, port
         self.token = token or secrets.token_urlsafe(24)
+        # None (the default `applyloop ui` case) disables /api/login entirely: the only way in is the one
+        # token printed to the terminal. Set $APPLYLOOP_PASSWORD to turn on password login for a deployment.
+        self.password = password if password is not None else os.environ.get("APPLYLOOP_PASSWORD") or None
         self.subscribers = []
+        self._login_attempts = {}
+        self._login_lock = threading.Lock()
         loop.store.listeners.append(self._broadcast)
+
+    def login(self, password, source):
+        if self.password is None:
+            return None, "password login isn't enabled; open the link printed in the terminal instead"
+        now = time.time()
+        with self._login_lock:
+            hits = [t for t in self._login_attempts.get(source, []) if now - t < LOGIN_WINDOW]
+            if len(hits) >= LOGIN_MAX_ATTEMPTS:
+                return None, "too many attempts; wait a minute and try again"
+            if not secrets.compare_digest(password or "", self.password):
+                hits.append(now)
+                self._login_attempts[source] = hits
+                return None, "wrong password"
+            self._login_attempts.pop(source, None)
+        return self.token, None
 
     def _broadcast(self, event):
         for q in list(self.subscribers):
@@ -141,6 +167,23 @@ class App:
                 tok = self.headers.get("X-Token") or (qs.get("t") or [None])[0]
                 return self._ok_origin() and tok is not None and secrets.compare_digest(tok, app.token)
 
+            def _serve_static(self, url_path):
+                """The React app's built files (web/dist), or the legacy single-file ui.html if it hasn't
+                been built. Public, like any page with a login screen in front of it: only the API is gated."""
+                if os.path.isdir(WEB_DIST):
+                    rel = (url_path or "/").lstrip("/") or "index.html"
+                    path = os.path.normpath(os.path.join(WEB_DIST, rel))
+                    if not path.startswith(os.path.normpath(WEB_DIST) + os.sep) and path != os.path.normpath(WEB_DIST):
+                        return self._send(403, {"error": "forbidden"})
+                    if not os.path.isfile(path):
+                        path = os.path.join(WEB_DIST, "index.html")  # client-side routes fall back to the SPA shell
+                    ctype = {".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml",
+                            ".json": "application/json", ".ico": "image/x-icon"}.get(os.path.splitext(path)[1], None)
+                    with open(path, "rb") as f:
+                        return self._send(200, f.read(), ctype or ("text/html; charset=utf-8" if path.endswith(".html") else "application/octet-stream"))
+                with open(PAGE, encoding="utf-8") as f:
+                    return self._send(200, f.read().replace("__TOKEN__", app.token), "text/html; charset=utf-8")
+
             def _send(self, code, body, ctype="application/json"):
                 data = body if isinstance(body, bytes) else (json.dumps(body, default=str) if ctype == "application/json" else body).encode()
                 self.send_response(code)
@@ -153,11 +196,12 @@ class App:
             def do_GET(self):
                 u = urlparse(self.path)
                 qs = parse_qs(u.query)
+                if u.path == "/" or (not u.path.startswith("/api/") and not u.path.startswith("/screens/") and u.path != "/ghosted"):
+                    if not self._ok_origin():
+                        return self._send(403, {"error": "forbidden"})
+                    return self._serve_static(u.path)
                 if not self._authed(qs):
-                    return self._send(403, {"error": "forbidden: open the link printed by `applyloop ui`"})
-                if u.path == "/":
-                    with open(PAGE, encoding="utf-8") as f:
-                        return self._send(200, f.read().replace("__TOKEN__", app.token), "text/html; charset=utf-8")
+                    return self._send(403, {"error": "forbidden: log in, or open the link printed by `applyloop ui`"})
                 if u.path == "/api/state":
                     return self._send(200, app.state())
                 if u.path.startswith("/screens/"):
@@ -194,6 +238,12 @@ class App:
 
             def do_POST(self):
                 u = urlparse(self.path)
+                if not self._ok_origin():
+                    return self._send(403, {"error": "forbidden"})
+                if u.path == "/api/login":
+                    body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
+                    token, error = app.login(body.get("password"), self.client_address[0])
+                    return self._send(401, {"error": error}) if error else self._send(200, {"token": token})
                 if not self._authed(parse_qs(u.query)):
                     return self._send(403, {"error": "forbidden"})
                 try:
@@ -211,6 +261,9 @@ class App:
 
     def url(self):
         return "http://127.0.0.1:%d/?t=%s" % (self.port, self.token)
+
+    def login_url(self):
+        return "http://127.0.0.1:%d/" % self.port
 
 
 def add_resume_file(store, label, path):

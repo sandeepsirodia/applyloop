@@ -3,3 +3,6 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+applyloop/web_dist/
+node_modules/
+web/dist/

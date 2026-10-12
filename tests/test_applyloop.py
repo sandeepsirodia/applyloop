@@ -10,6 +10,7 @@ import tempfile
 import threading
 import time
 import unittest
+import unittest.mock
 import urllib.error
 import urllib.request
 import zipfile
@@ -22,6 +23,7 @@ from ratekeeper import Keeper  # noqa: E402
 from applyloop import forms, intake  # noqa: E402
 from applyloop.pipeline import Browser, Loop  # noqa: E402
 from applyloop.store import Store  # noqa: E402
+from applyloop import ui as ui_module  # noqa: E402
 from applyloop.ui import App, add_resume_file  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -415,6 +417,11 @@ class TestPipeline(Base):
 
 class TestUI(Base):
     def test_e10_token_and_origin_are_required(self):
+        # Deliberately exercises the legacy single-file page: whether the real `web/dist` build happens to
+        # exist on this machine is incidental dev state, and must not change what this test asserts.
+        patch = unittest.mock.patch.object(ui_module, "WEB_DIST", "/does-not-exist-so-the-legacy-page-is-served")
+        patch.start()
+        self.addCleanup(patch.stop)
         app = App(self.loop, port=0)
         server = app.serve()
         app.port = server.server_address[1]
@@ -454,6 +461,98 @@ class TestUI(Base):
         with urllib.request.urlopen(req) as r:
             self.assertEqual(json.loads(r.read())["label"], "v2")
         self.assertFalse(self.store.get("resumes")["v2"]["reviewed"])
+
+    def test_react_build_is_served_when_present(self):
+        # The counterpart to test_e10 above: builds a minimal fake `web/dist` and confirms it, not the
+        # legacy page, is what gets served -- and that an unknown client-side route (e.g. /approvals,
+        # which only React Router knows about) falls back to the SPA shell rather than a 404.
+        dist = os.path.join(self.dir, "fakedist")
+        os.makedirs(os.path.join(dist, "assets"))
+        with open(os.path.join(dist, "index.html"), "w") as f:
+            f.write("<!doctype html><title>react shell</title>")
+        with open(os.path.join(dist, "assets", "app.js"), "w") as f:
+            f.write("console.log('hi')")
+        patch = unittest.mock.patch.object(ui_module, "WEB_DIST", dist)
+        patch.start()
+        self.addCleanup(patch.stop)
+        app = App(self.loop, port=0)
+        server, base = self._run(app)
+        self.addCleanup(lambda: (server.shutdown(), server.server_close()))
+        with urllib.request.urlopen(base + "/") as r:
+            self.assertIn(b"react shell", r.read())
+        with urllib.request.urlopen(base + "/assets/app.js") as r:
+            self.assertEqual(r.headers["Content-Type"], "text/javascript")
+            self.assertIn(b"console.log", r.read())
+        with urllib.request.urlopen(base + "/approvals") as r:  # a client-side route, not a real file
+            self.assertIn(b"react shell", r.read())
+        with self.assertRaises(urllib.error.HTTPError):  # path traversal out of web_dist must still fail
+            urllib.request.urlopen(base + "/../../etc/passwd")
+
+    @staticmethod
+    def _run(app):
+        server = app.serve()
+        app.port = server.server_address[1]
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        return server, "http://127.0.0.1:%d" % app.port
+
+    @staticmethod
+    def _post(base, path, payload, headers=None):
+        req = urllib.request.Request(base + path, json.dumps(payload).encode(),
+                                     {**(headers or {}), "Content-Type": "application/json"}, method="POST")
+        try:
+            with urllib.request.urlopen(req) as r:
+                return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read())
+
+    def test_root_is_public_but_the_api_still_needs_the_token(self):
+        # The React build's index.html (or the legacy ui.html fallback) is the login screen itself, so it has
+        # to load with no token at all -- only the API behind it stays gated.
+        app = App(self.loop, port=0)
+        server, base = self._run(app)
+        self.addCleanup(lambda: (server.shutdown(), server.server_close()))
+        with urllib.request.urlopen(base + "/") as r:
+            self.assertEqual(r.status, 200)
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            urllib.request.urlopen(base + "/api/state")
+        self.assertEqual(ctx.exception.code, 403)
+
+    def test_login_is_disabled_until_a_password_is_configured(self):
+        app = App(self.loop, port=0)  # no password= given: this is `applyloop ui` run with no $APPLYLOOP_PASSWORD
+        server, base = self._run(app)
+        self.addCleanup(lambda: (server.shutdown(), server.server_close()))
+        code, body = self._post(base, "/api/login", {"password": "anything"})
+        self.assertEqual(code, 401)
+        self.assertIn("isn't enabled", body["error"])
+
+    def test_login_is_cross_origin_protected(self):
+        app = App(self.loop, port=0, password="s3cret")
+        server, base = self._run(app)
+        self.addCleanup(lambda: (server.shutdown(), server.server_close()))
+        code, _ = self._post(base, "/api/login", {"password": "s3cret"}, {"Origin": "https://evil.example"})
+        self.assertEqual(code, 403)
+
+    def test_correct_password_returns_the_real_session_token(self):
+        app = App(self.loop, port=0, password="s3cret")
+        server, base = self._run(app)
+        self.addCleanup(lambda: (server.shutdown(), server.server_close()))
+        code, body = self._post(base, "/api/login", {"password": "s3cret"})
+        self.assertEqual((code, body["token"]), (200, app.token))
+        req = urllib.request.Request(base + "/api/state", headers={"X-Token": body["token"]})
+        with urllib.request.urlopen(req) as r:
+            self.assertEqual(r.status, 200)
+
+    def test_wrong_password_locks_out_after_too_many_attempts(self):
+        app = App(self.loop, port=0, password="s3cret")
+        server, base = self._run(app)
+        self.addCleanup(lambda: (server.shutdown(), server.server_close()))
+        for _ in range(5):
+            code, body = self._post(base, "/api/login", {"password": "wrong"})
+            self.assertEqual((code, body["error"]), (401, "wrong password"))
+        # Locked out now, even with the right password -- proves it's a real lockout, not just "wrong" every time.
+        code, body = self._post(base, "/api/login", {"password": "s3cret"})
+        self.assertEqual(code, 401)
+        self.assertIn("too many attempts", body["error"])
 
 
 class TestIntake(Base):
